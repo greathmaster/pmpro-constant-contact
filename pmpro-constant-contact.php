@@ -3,7 +3,7 @@
 Plugin Name: PMPro Constant Contact Integration
 Plugin URI: http://www.paidmembershipspro.com/pmpro-constantcontact/
 Description: Sync your WordPress users and members with Constant Contact lists.
-Version: 0.1
+Version: 0.2
 Author: Stranger Studios
 Author URI: http://www.strangerstudios.com
 */
@@ -14,16 +14,16 @@ Author URI: http://www.strangerstudios.com
 
 use Ctct\ConstantContact;
 use Ctct\Components\Contacts\Contact;
+use Ctct\Components\Contacts\CustomField;
 use Ctct\Components\Contacts\ContactList;
 use Ctct\Components\Contacts\EmailAddress;
 use Ctct\Exceptions\CtctException;
-
 
 //init
 function pmprocc_init()
 {
 	//include ConstantContact Class if we don't have it already
-	require_once 'includes/src/Ctct/autoload.php';
+	require_once dirname(__FILE__) . '/includes/Ctct/autoload.php';
 
 	//get options for below
 	$options = get_option("pmprocc_options");
@@ -40,12 +40,7 @@ function pmprocc_init()
 	if(!empty($pmprocc_levels))
 	{		
 		add_action("pmpro_after_change_membership_level", "pmprocc_pmpro_after_change_membership_level", 15, 2);
-	}
-	
-	define("APIKEY", $options['api_key']);
-	define("ACCESS_TOKEN", $options['access_token']); 
-	
-	
+	}	
 }
 add_action("init", "pmprocc_init", 0);
 
@@ -85,7 +80,7 @@ function pmprocc_user_register($user_id)
 		$list_user = get_userdata($user_id);
 		
 		//subscribe to each list
-		$api = new ConstantContact(APIKEY);
+		$api = new ConstantContact($options['api_key']);
 		
 		foreach($options['users_lists'] as $list)
 		{					
@@ -93,19 +88,18 @@ function pmprocc_user_register($user_id)
 			try
 			{
         			// check to see if a contact with the email addess already exists in the account
-        			$response = $api->getContactByEmail(ACCESS_TOKEN, $list_user->user_email);
+        			$response = $api->getContactByEmail($options['access_token'], $list_user->user_email);
 
 		        	// create a new contact if one does not exist
         			if (empty($response->results))
         			{
             			$contact = new Contact();
-					$contact->addEmail($list_user->user_email);
-					$contact->addList($list->id);
-					$contact->first_name = $list_user->first_name;
-					$contact->last_name = $list_user->last_name;
-					$api->addContact(ACCESS_TOKEN, $contact); 
-      			}
-        
+						$contact->addEmail($list_user->user_email);
+						$contact->addList($list->id);
+						$contact->first_name = $list_user->first_name;
+						$contact->last_name = $list_user->last_name;
+						$api->addContact($options['access_token'], $contact); 
+					}
         		}
         		
         		//Catch any errors so the user can't see them.
@@ -134,7 +128,7 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 		$list_user = get_userdata($user_id);		
 		
 		//subscribe to each list
-		$api = new ConstantContact(APIKEY);
+		$api = new ConstantContact($options['api_key']);
 				
 		foreach($options['level_' . $level_id . '_lists'] as $list)
 		{		
@@ -143,39 +137,37 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 			//subscribe them
 			try
 			{
-        			// check to see if a contact with the email addess already exists in the account
-        			$response = $api->getContactByEmail(ACCESS_TOKEN, $list_user->user_email);
-        			
-        			//?? What should we do if the email address already exists?
-        			
-		        	// create a new contact if one does not exist
-        			if (empty($response->results))
-        			{
-            			$contact = new Contact();
+				// check to see if a contact with the email addess already exists in the account
+				$response = $api->getContactByEmail($options['access_token'], $list_user->user_email);
+				
+				//?? What should we do if the email address already exists?
+				
+				// create a new contact if one does not exist
+				if (empty($response->results))
+				{
+					$contact = new Contact();
 					$contact->addEmail($list_user->user_email);
 					$contact->addList($list);
 					$contact->first_name = $list_user->first_name;
 					$contact->last_name = $list_user->last_name;
-					$api->addContact(ACCESS_TOKEN, $contact); 
-      			}
-      			
-      			else
-      			{
+					$api->addContact($options['access_token'], $contact); 
+				}      			
+				else
+				{
 					$contact = $response->results[0];
 					$contact->addList($list);
 					$contact->first_name = $list_user->first_name;
 					$contact->last_name = $list_user->last_name;
-					$returnContact = $api->updateContact(ACCESS_TOKEN, $contact, false);
-      			}
+					$returnContact = $api->updateContact($options['access_token'], $contact, false);
+				}
       			
         
-        		}
-        		
-        		//Catch any errors so the user can't see them.
-        		catch (CtctException $ex)
-        		{
-        			//WordPress Error Message?
-        		}
+       		}        	
+			//Catch any errors so the user can't see them.
+			catch (CtctException $ex)
+			{
+				//WordPress Error Message?
+			}
 		}
 		
 		//unsubscribe them from lists not selected
@@ -185,7 +177,7 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 			{
 				if(!in_array($list[id], $options['level_' . $level_id . '_lists']))
 				{
-					deleteFromList(ACCESS_TOKEN, $list_user->user_email, $list[id]);
+					deleteFromList($options['access_token'], $list_user->user_email, $list[id]);
 				}
 			}
 		}
@@ -199,35 +191,46 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 			$list_user = get_userdata($user_id);
 			
 			//subscribe to each list
-			$api = new ConstantContact(APIKEY);
+			$api = new ConstantContact($options['api_key']);
 			foreach($options['users_lists'] as $list)
 			{					
 				//subscribe them
 				try
 				{
-        				// check to see if a contact with the email addess already exists in the account
-        				$response = $api->getContactByEmail(ACCESS_TOKEN, $list_user->user_email);
+					// check to see if a contact with the email addess already exists in the account
+					$response = $api->getContactByEmail($options['access_token'], $list_user->user_email);
 
-		        		// create a new contact if one does not exist
-        				if (empty($response->results))
-        				{
+					// create a new contact if one does not exist
+					if (empty($response->results))
+					{
 						$contact = new Contact();
 						$contact->addEmail($list_user->user_email);
 						$contact->addList($list);
 						$contact->first_name = $list_user->first_name;
 						$contact->last_name = $list_user->last_name;
-						$api->addContact(ACCESS_TOKEN, $contact); 
-      				}
-        
-        			}
-        		
-        			//Catch any errors so the user can't see them.
-        			catch (CtctException $ex)
-        			{
-        				//WordPress Error Message?
-        			}
-			
-			
+						
+						//filter
+						$custom_fields = apply_filters("pmpro_constant_contact_custom_fields", array(), $list_user);
+						if(!empty($custom_fields))
+						{
+							foreach($custom_fields as $field)
+							{
+								$custom_field = new CustomField();
+								$custom_field->name = $field['name'];
+								$custom_field->value = $field['value'];
+														
+								$contact->addCustomField($custom_field);
+							}
+						}		
+						
+						$api->addContact($options['access_token'], $contact, true); 
+					}	
+				}			
+				//Catch any errors so the user can't see them.
+				catch (CtctException $ex)
+				{
+					//WordPress Error Message?
+				}						
 			}
 			
 			//unsubscribe from any list not assigned to users
@@ -237,7 +240,7 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 				{
 					if(!in_array($list[id], $options['users_lists']))
 					{
-						deleteFromList(ACCESS_TOKEN, $list_user->user_email, $list[id]);
+						deleteFromList($options['access_token'], $list_user->user_email, $list[id]);
 					}	
 				}
 			}
@@ -253,12 +256,11 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 					$list_user = get_userdata($user_id);
 					
 					//unsubscribe to each list
-					$api = new ConstantContact(APIKEY);
+					$api = new ConstantContact($options['api_key']);
 					foreach($all_lists as $list)
 					{
-						deleteFromList(ACCESS_TOKEN, $list_user->user_email, $list[id]);
-					}
-					
+						deleteFromList($options['access_token'], $list_user->user_email, $list[id]);
+					}					
 				}
 			}
 		}
@@ -269,28 +271,43 @@ function pmprocc_pmpro_after_change_membership_level($level_id, $user_id)
 function pmprocc_profile_update($user_id, $old_user_data)
 {
 	$new_user_data = get_userdata($user_id);
-	if($new_user_data->user_email != $old_user_data->user_email)
+	if(true || $new_user_data->user_email != $old_user_data->user_email)
 	{			
 		//get all lists
 		$options = get_option("pmprocc_options");
-		$api = new ConstantContact(APIKEY);
+		$api = new ConstantContact($options['api_key']);
 		
-		$lists = $api->getLists(ACCESS_TOKEN);
+		$lists = $api->getLists($options['access_token']);
 		
-		$response = $api->getContactByEmail(ACCESS_TOKEN, $old_user_data->user_email);
+		$response = $api->getContactByEmail($options['access_token'], $old_user_data->user_email);
 		$contact = $response->results[0];
-		
-		if(!empty($lists))
+				
+		if(!empty($lists) && !empty($contact))
 		{ 
 			foreach($lists as $list)
 			{
 				$contact->addList($list->id);
+				$contact->first_name = $new_user_data->first_name;
+				$contact->last_name = $new_user_data->last_name;
 				$contact->email_addresses[0]->email_address = $new_user_data->user_email;
-				$returnContact = $api->updateContact(ACCESS_TOKEN, $contact, false);
-			}
-		
-		}
-		
+								
+				//filter
+				$custom_fields = apply_filters("pmpro_constant_contact_custom_fields", array(), $new_user_data);
+				if(!empty($custom_fields))
+				{
+					foreach($custom_fields as $field)
+					{
+						$custom_field = new CustomField();
+						$custom_field->name = $field['name'];
+						$custom_field->value = $field['value'];
+												
+						$contact->addCustomField($custom_field);
+					}
+				}							
+						
+				$api->updateContact($options['access_token'], $contact, true);
+			}		
+		}		
 	}
 }
 add_action("profile_update", "pmprocc_profile_update", 10, 2);
@@ -521,13 +538,13 @@ add_action('admin_menu', 'pmprocc_admin_add_page');
 //html for options page
 function pmprocc_options_page()
 {
-	$api = new ConstantContact(APIKEY);
-
-	global $pmprocc_lists;
-	
 	//get options
 	$options = get_option("pmprocc_options");	
-	
+
+	$api = new ConstantContact($options['api_key']);
+
+	global $pmprocc_lists;
+			
 	//defaults
 	if(empty($options))
 	{
@@ -548,7 +565,7 @@ function pmprocc_options_page()
 	{
 		try 
 		{
-    			$lists = $api->getLists(ACCESS_TOKEN);
+    			$lists = $api->getLists($options['access_token']);
 		} 
 		
 		catch (CtctException $ex) 
@@ -663,7 +680,10 @@ function deleteFromList($access_token, $email, $list_id)
 	
 	try
 	{
-		$api = new ConstantContact(APIKEY);
+		//get options
+		$options = get_option("pmprocc_options");	
+		
+		$api = new ConstantContact($options['api_key']);
 
 		$response = $api->getContactByEmail($access_token, $email);
 
